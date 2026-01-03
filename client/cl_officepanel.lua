@@ -1,3 +1,26 @@
+local RSGCore = exports['rsg-core']:GetCoreObject()
+-- ==========================================================
+-- Office panel open helper (used by NUI + other events)
+-- ==========================================================
+
+local function openOfficePanel(ctx)
+    ctx = ctx or {}
+
+    -- Ensure we focus NUI
+    SetNuiFocus(true, true)
+
+    -- Tell the HTML/JS to open the office panel
+    SendNUIMessage({
+        action  = "govOfficePanel:open",  -- keep this in sync with your JS
+        payload = ctx
+    })
+end
+
+-- Optional: expose as an event for other scripts
+RegisterNetEvent('rsg-governor:client:openOfficePanel', function(ctx)
+    openOfficePanel(ctx)
+end)
+
 -- client/cl_officepanel.lua
 local function fmtMoney(amount)
     amount = tonumber(amount) or 0
