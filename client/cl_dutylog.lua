@@ -181,10 +181,24 @@ local function selectPayMode(currentMode, currentBranchId)
         options = {
             {
                 title = 'BANK',
-                description = 'Receive payroll to a bank account (requires branch selection).',
+                description = 'Receive payroll to your region\'s default bank.',
                 icon = 'building-columns',
                 onSelect = function()
-                    openBankBranchSelect(currentBranchId)
+                    local ok = lib.callback.await('rsg-governor:setPayMode', false, 'bank', nil)
+                    if ok then
+                        lib.notify({
+                            title       = 'Payment Mode',
+                            type        = 'success',
+                            description = 'Set to BANK (region default).'
+                        })
+                        openDutyLogUI()
+                    else
+                        lib.notify({
+                            title       = 'Payment Mode',
+                            type        = 'error',
+                            description = 'Failed to update payment mode.'
+                        })
+                    end
                 end
             },
             {
@@ -196,14 +210,14 @@ local function selectPayMode(currentMode, currentBranchId)
                     if ok then
                         lib.notify({
                             title = 'Payment Mode',
-                            type = 'success',
+                            type  = 'success',
                             description = 'Set to CASH.'
                         })
                         openDutyLogUI()
                     else
                         lib.notify({
                             title = 'Payment Mode',
-                            type = 'error',
+                            type  = 'error',
                             description = 'Failed to update payment mode.'
                         })
                     end
@@ -235,15 +249,7 @@ function openDutyLogUI()
 
     local branchLine = ''
     if data.pay_mode == 'bank' then
-        local label = data.bank_branch_label
-        if not label or label == '' then
-            if data.bank_branch_id and BankBranches[data.bank_branch_id] then
-                label = BankBranches[data.bank_branch_id]
-            else
-                label = '(not set)'
-            end
-        end
-        branchLine = ('\nBank Branch: %s'):format(label)
+        branchLine = '\nBank: Region default bank'
     end
 
     local summaryDesc = string.format(
@@ -280,9 +286,18 @@ function openDutyLogUI()
         local regH, regM = hoursToHM(s.regular or 0.0)
         local otH,  otM  = hoursToHM(s.overtime or 0.0)
 
+        -- normalize paid flag to numeric 0/1
+        local paidFlag = 0
+        if s.paid == true then
+            paidFlag = 1
+        else
+            paidFlag = tonumber(s.paid) or 0
+        end
+        if paidFlag ~= 0 then paidFlag = 1 end
+
         options[#options+1] = {
             title = string.format('%s — $%d',
-                s.paid == 1 and '[PAID]' or '[UNPAID]',
+                paidFlag == 1 and '[PAID]' or '[UNPAID]',
                 math.floor((s.estimated or 0) + 0.5)
             ),
             description = string.format(
@@ -294,6 +309,8 @@ function openDutyLogUI()
             ),
             arrow = true,
             onSelect = function()
+                -- pass the normalized flag into details as well
+                s.paid = paidFlag
                 openDutyLogDetails(s, data, realLine, ingameLine)
             end
         }
@@ -324,6 +341,15 @@ function openDutyLogDetails(s, data, realLine, ingameLine)
 
     local estimated = math.floor((s.estimated or 0) + 0.5)
 
+    -- normalize again for safety (in case this is called from somewhere else)
+    local paidFlag = 0
+    if s.paid == true then
+        paidFlag = 1
+    else
+        paidFlag = tonumber(s.paid) or 0
+    end
+    if paidFlag ~= 0 then paidFlag = 1 end
+
     local description = string.format(
         'Real Date/Time:\n%s\n\nIn-Game Date/Time:\n%s\n\nRegular: %d hours %d minutes\nOvertime: %d hours %d minutes\nRate: $%d/hr\nOT Rate: $%d/hr\n\nEstimated Pay: $%d\nStatus: %s',
         realLine,
@@ -333,7 +359,7 @@ function openDutyLogDetails(s, data, realLine, ingameLine)
         baseRate,
         otRate,
         estimated,
-        s.paid == 1 and 'PAID' or 'UNPAID'
+        paidFlag == 1 and 'PAID' or 'UNPAID'
     )
 
     lib.registerContext({
