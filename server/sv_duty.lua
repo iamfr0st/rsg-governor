@@ -9,7 +9,7 @@ local TAX_RES  = 'rsg-economy'
 local DUTY_TABLE = 'governor_duty_sessions'
 
 local Gov       = Gov or {}   -- helper table from other server files
-local dutyClock = {}          -- optional debug storage (recordClock/updateClock)
+local dutyClock = {}          -- stores last clock + duty state per src
 
 -- Small helpers
 local function normRegion(name)
@@ -191,11 +191,22 @@ local function computePayrollForRegion(regionName)
     }
 end
 
+-- old region-wide marker (kept for compatibility, not used now)
 local function markSessionsPaidForRegion(regionName)
     local reg = normRegion(regionName)
     MySQL.update.await(([[ 
         UPDATE %s SET paid = 1 WHERE region_name = ? AND paid = 0
     ]]):format(DUTY_TABLE), { reg })
+end
+
+-- NEW: mark sessions paid for a specific citizen in a region
+local function markSessionsPaidForCitizen(regionName, citizenid)
+    local reg = normRegion(regionName)
+    MySQL.update.await(([[ 
+        UPDATE %s
+           SET paid = 1
+         WHERE region_name = ? AND citizenid = ? AND paid = 0
+    ]]):format(DUTY_TABLE), { reg, citizenid })
 end
 
 --======================================================================
@@ -272,7 +283,12 @@ RSGCore.Commands.Add('govpayroll', 'Run payroll for your region', {
         if player then
             local amt = entry.pay
             if amt > 0 then
-                toPay[#toPay+1] = { src = player.PlayerData.source, amount = amt, entry = entry }
+                toPay[#toPay+1] = {
+                    src       = player.PlayerData.source,
+                    citizenid = citizenid,
+                    amount    = amt,
+                    entry     = entry
+                }
                 totalThisRun = totalThisRun + amt
             end
         end
@@ -290,18 +306,33 @@ RSGCore.Commands.Add('govpayroll', 'Run payroll for your region', {
             return
         end
 
-        -- Pay players (bank here = central region salary bank; officepanel uses prefs)
+        -- Pay players using their preferred account (cash or bank branch)
         for _, p in ipairs(toPay) do
             local player = RSGCore.Functions.GetPlayer(p.src)
             if player then
-                local amount = math.floor(p.amount + 0.5)
-                player.Functions.AddMoney('bank', amount, ('gov-payroll-%s'):format(regionNorm))
-                notify(p.src, ('You received $%d in salary (region: %s).'):format(amount, regionNorm), 'success')
+                local amount    = math.floor(p.amount + 0.5)
+                local citizenid = p.citizenid
+                --local moneytype = getPayrollAccountForCitizen(citizenid)
+                local moneytype = getPayrollAccountForCitizen(citizenid, regionNorm)
+
+                local ok = player.Functions.AddMoney(moneytype, amount, ('gov-payroll-%s'):format(regionNorm))
+                if ok then
+                    notify(
+                        p.src,
+                        ('You received $%d in salary (region: %s, account: %s).'):format(amount, regionNorm, moneytype),
+                        'success'
+                    )
+                    -- Only mark sessions paid if the deposit succeeded
+                    markSessionsPaidForCitizen(regionNorm, citizenid)
+                else
+                    notify(
+                        p.src,
+                        ('Payroll deposit of $%d to your %s account failed.'):format(amount, moneytype),
+                        'error'
+                    )
+                end
             end
         end
-
-        -- Mark sessions paid (for entire region)
-        markSessionsPaidForRegion(regionNorm)
 
         notify(src, ('Payroll complete for %s. Paid $%d to %d employees. New treasury: $%d.')
             :format(regionNorm, math.floor(totalThisRun + 0.5), #toPay, math.floor(newBal or 0)), 'success')
@@ -583,7 +614,12 @@ lib.callback.register('rsg-governor:runPayroll', function(src, regionName)
         if player then
             local amt = entry.pay
             if amt > 0 then
-                toPay[#toPay+1] = { src = player.PlayerData.source, amount = amt, entry = entry }
+                toPay[#toPay+1] = {
+                    src       = player.PlayerData.source,
+                    citizenid = citizenid,
+                    amount    = amt,
+                    entry     = entry
+                }
                 totalThisRun = totalThisRun + amt
             end
         end
@@ -613,17 +649,33 @@ lib.callback.register('rsg-governor:runPayroll', function(src, regionName)
         return { ok = false, error = 'Treasury check or withdraw failed (insufficient funds or permission).' }
     end
 
-    -- Pay players
+    -- Pay players using their preferred account (cash or bank branch)
     for _, p in ipairs(toPay) do
         local player = RSGCore.Functions.GetPlayer(p.src)
         if player then
-            local amount = math.floor(p.amount + 0.5)
-            player.Functions.AddMoney('bank', amount, ('gov-payroll-%s'):format(regionNorm))
-            notify(p.src, ('You received $%d in salary (region: %s).'):format(amount, regionNorm), 'success')
+            local amount    = math.floor(p.amount + 0.5)
+            local citizenid = p.citizenid
+            --local moneytype = getPayrollAccountForCitizen(citizenid)
+            local moneytype = getPayrollAccountForCitizen(citizenid, regionNorm)
+
+            local ok = player.Functions.AddMoney(moneytype, amount, ('gov-payroll-%s'):format(regionNorm))
+            if ok then
+                notify(
+                    p.src,
+                    ('You received $%d in salary (region: %s, account: %s).'):format(amount, regionNorm, moneytype),
+                    'success'
+                )
+                -- Only mark sessions paid if the deposit succeeded
+                markSessionsPaidForCitizen(regionNorm, citizenid)
+            else
+                notify(
+                    p.src,
+                    ('Payroll deposit of $%d to your %s account failed.'):format(amount, moneytype),
+                    'error'
+                )
+            end
         end
     end
-
-    markSessionsPaidForRegion(regionNorm)
 
     notify(src, ('Payroll complete for %s. Paid $%d to %d employees. New treasury: $%d.')
         :format(regionNorm, math.floor(totalThisRun + 0.5), #toPay, math.floor(newBal or 0)), 'success')
@@ -680,6 +732,27 @@ local function getPayMode(citizenid)
     return mode
 end
 
+-- Decide which money account to use for payroll (cash vs region bank)
+function getPayrollAccountForCitizen(citizenid, regionName)
+    local mode = getPayMode(citizenid)  -- uses getPayPreference under the hood
+    mode = tostring(mode or 'bank'):lower()
+
+    -- If player prefers cash, pay cash
+    if mode == 'cash' then
+        return 'cash'
+    end
+
+    -- Otherwise, use region-default bank (valbank, rhobank, etc.)
+    local reg = normRegion(regionName or 'unknown')
+    local bankId = 'bank' -- fallback to generic bank (Saint Denis)
+
+    if Config.RegionBankDefaults and Config.RegionBankDefaults[reg] then
+        bankId = Config.RegionBankDefaults[reg]
+    end
+
+    return bankId
+end
+
 local function setPayMode(citizenid, mode, branchId)
     mode = tostring(mode or 'bank'):lower()
     if mode ~= 'cash' and mode ~= 'bank' then
@@ -713,6 +786,120 @@ local function normalizeStamp(v)
     else
         return '?'
     end
+end
+
+--======================================================================
+--  HELPERS FOR DUTY CLOCK (CLOSE SESSION + OVERTIME SPLIT)
+--======================================================================
+
+-- 8 hours regular, rest overtime (per session, in IN-GAME time)
+local function splitRegularOvertime(elapsedGameMin)
+    elapsedGameMin = tonumber(elapsedGameMin or 0) or 0
+    if elapsedGameMin <= 0 then
+        return 1, 0 -- never 0-minute
+    end
+
+    -- Configurable, but default to 8h (480 min) if not set
+    local overtimeCfg = (Config.Payroll and Config.Payroll.OvertimeMinutes) or (8 * 60)
+
+    local regMin, otMin = elapsedGameMin, 0
+    if overtimeCfg > 0 and elapsedGameMin > overtimeCfg then
+        regMin = overtimeCfg
+        otMin  = elapsedGameMin - overtimeCfg
+    end
+
+    return regMin, otMin
+end
+
+-- Close the latest open duty session for a citizen using an in-game clock snapshot
+local function finalizeOpenDutySession(citizenid, igClock, realEnd)
+    if not citizenid or not igClock then return end
+
+    local igYear   = igClock.year   or 1898
+    local igMonth  = igClock.month  or 1
+    local igDay    = igClock.day    or 1
+    local igHour   = igClock.hour   or 0
+    local igMinute = igClock.minute or 0
+
+    realEnd = realEnd or os.date('%Y-%m-%d %H:%M:%S', os.time())
+
+    local rows = MySQL.query.await(([[
+        SELECT
+            id,
+            started_at,
+            ig_start_year,
+            ig_start_month,
+            ig_start_day,
+            ig_start_hour,
+            ig_start_minute
+        FROM %s
+        WHERE citizenid = ? AND ended_at IS NULL
+        ORDER BY id DESC
+        LIMIT 1
+    ]]):format(DUTY_TABLE), { citizenid })
+
+    if not rows or not rows[1] then
+        return
+    end
+
+    local row   = rows[1]
+    local rowId = row.id
+
+    -- Build IN-GAME start and end timestamps
+    local sYear   = tonumber(row.ig_start_year)   or igYear
+    local sMonth  = tonumber(row.ig_start_month)  or igMonth
+    local sDay    = tonumber(row.ig_start_day)    or igDay
+    local sHour   = tonumber(row.ig_start_hour)   or igHour
+    local sMinute = tonumber(row.ig_start_minute) or igMinute
+
+    local startGameTs = os.time({
+        year  = sYear,
+        month = sMonth,
+        day   = sDay,
+        hour  = sHour,
+        min   = sMinute,
+        sec   = 0,
+    })
+
+    local endGameTs = os.time({
+        year  = igYear,
+        month = igMonth,
+        day   = igDay,
+        hour  = igHour,
+        min   = igMinute,
+        sec   = 0,
+    })
+
+    local elapsedGameSec = math.max(0, endGameTs - startGameTs)
+    local elapsedGameMin = math.floor(elapsedGameSec / 60)
+    if elapsedGameMin <= 0 then
+        elapsedGameMin = 1
+    end
+
+    local regMin, otMin = splitRegularOvertime(elapsedGameMin)
+
+    MySQL.update.await(([[
+        UPDATE %s SET
+            ended_at         = ?,
+            minutes_regular  = ?,
+            minutes_overtime = ?,
+            ig_end_year      = ?,
+            ig_end_month     = ?,
+            ig_end_day       = ?,
+            ig_end_hour      = ?,
+            ig_end_minute    = ?
+        WHERE id = ?
+    ]]):format(DUTY_TABLE), {
+        realEnd,
+        regMin,
+        otMin,
+        igYear,
+        igMonth,
+        igDay,
+        igHour,
+        igMinute,
+        rowId
+    })
 end
 
 --=====================================================
@@ -769,6 +956,7 @@ lib.callback.register('rsg-governor:getDutyLog', function(src)
     local recentDays = dutyCfg.RecentDays or 14
     local limitPaid  = dutyCfg.MaxPaidHistory or 50  -- currently unused but kept
 
+    -- UNPAID rows
     local unpaid = MySQL.query.await([[
         SELECT
             id,
@@ -792,8 +980,9 @@ lib.callback.register('rsg-governor:getDutyLog', function(src)
         FROM governor_duty_sessions
         WHERE citizenid = ? AND paid = 0
         ORDER BY ended_at DESC
-    ]], { citizenid })
+    ]], { citizenid }) or {}
 
+    -- PAID rows (depending on mode)
     local paid = {}
 
     if mode == 'unpaid_plus_recent_paid' then
@@ -820,7 +1009,7 @@ lib.callback.register('rsg-governor:getDutyLog', function(src)
             FROM governor_duty_sessions
             WHERE citizenid = ? AND paid = 1
             ORDER BY ended_at DESC
-        ]], { citizenid })
+        ]], { citizenid }) or {}
 
     elseif mode == 'recent_days' then
         paid = MySQL.query.await([[
@@ -846,7 +1035,7 @@ lib.callback.register('rsg-governor:getDutyLog', function(src)
             FROM governor_duty_sessions
             WHERE citizenid = ? AND ended_at >= NOW() - INTERVAL ? DAY
             ORDER BY ended_at DESC
-        ]], { citizenid, recentDays })
+        ]], { citizenid, recentDays }) or {}
 
     elseif mode == 'all' then
         paid = MySQL.query.await([[
@@ -872,7 +1061,7 @@ lib.callback.register('rsg-governor:getDutyLog', function(src)
             FROM governor_duty_sessions
             WHERE citizenid = ?
             ORDER BY ended_at DESC
-        ]], { citizenid })
+        ]], { citizenid }) or {}
 
     elseif mode == 'unpaid_only' then
         paid = {}
@@ -890,12 +1079,23 @@ lib.callback.register('rsg-governor:getDutyLog', function(src)
             local regH = (r.minutes_regular  or 0) / 60
             local otH  = (r.minutes_overtime or 0) / 60
 
+            -- 🔴 CRITICAL: normalize paid flag to numeric 0/1
+            local paidFlag = 0
+            if r.paid == true then
+                paidFlag = 1
+            else
+                paidFlag = tonumber(r.paid) or 0
+            end
+            if paidFlag ~= 0 then paidFlag = 1 end
+
             local otMult = (Config.Payroll and Config.Payroll.OvertimeMultiplier) or 1.5
             local est    = (regH * baseRate) + (otH * baseRate * otMult)
 
             totalReg = totalReg + regH
             totalOT  = totalOT + otH
-            if r.paid == 0 then
+
+            -- Only unpaid sessions contribute to "unpaid_total"
+            if paidFlag == 0 then
                 totalPay = totalPay + est
             end
 
@@ -904,7 +1104,7 @@ lib.callback.register('rsg-governor:getDutyLog', function(src)
 
             sessions[#sessions+1] = {
                 id        = r.id,
-                paid      = r.paid,
+                paid      = paidFlag,   -- << numeric for client
                 regular   = regH,
                 overtime  = otH,
                 estimated = est,
@@ -930,6 +1130,7 @@ lib.callback.register('rsg-governor:getDutyLog', function(src)
         end
     end
 
+    -- Unpaid first, then paid history
     addRows(unpaid)
     addRows(paid)
 
@@ -986,9 +1187,26 @@ end)
 --  DUTY CLOCK HANDLING (called from client)
 --=====================================================
 
+-- Store last clock + duty state per player (for disconnect auto-off)
 RegisterNetEvent('rsg-governor:server:duty:recordClock', function(clockData, isOnDuty)
     local src = source
-    dutyClock[src] = { last = clockData, isOn = isOnDuty }
+    if type(clockData) ~= 'table' then return end
+
+    local Player = RSGCore.Functions.GetPlayer(src)
+    if not Player then return end
+
+    local citizenid = Player.PlayerData.citizenid
+
+    dutyClock[src] = dutyClock[src] or {}
+    dutyClock[src].lastClock = {
+        year   = clockData.year   or 1898,
+        month  = clockData.month  or 1,
+        day    = clockData.day    or 1,
+        hour   = clockData.hour   or 0,
+        minute = clockData.minute or 0,
+    }
+    dutyClock[src].isOnDuty  = isOnDuty and true or false
+    dutyClock[src].citizenid = citizenid
 end)
 
 RegisterNetEvent('rsg-governor:server:duty:updateClock', function(clock, isOnDuty)
@@ -1005,16 +1223,23 @@ RegisterNetEvent('rsg-governor:server:duty:updateClock', function(clock, isOnDut
     local grade    = job.grade and job.grade.level or job.grade or 0
     local region   = getRegionAliasForPlayer(src)
 
-    -- If you only want LEO/MEDIC tracked, uncomment this block:
-    -- if jobType ~= 'leo' and jobType ~= 'medic' then
-    --     return
-    -- end
+    -- Keep dutyClock cache updated ALWAYS (for disconnect auto-off)
+    dutyClock[src] = dutyClock[src] or {}
+    dutyClock[src].lastClock = {
+        year   = clock.year   or 1898,
+        month  = clock.month  or 1,
+        day    = clock.day    or 1,
+        hour   = clock.hour   or 0,
+        minute = clock.minute or 0,
+    }
+    dutyClock[src].isOnDuty  = isOnDuty and true or false
+    dutyClock[src].citizenid = citizen
 
     -- Real-world timestamp now (server time)
     local now     = os.time()
     local realNow = os.date('%Y-%m-%d %H:%M:%S', now)
 
-    -- In-game clock snapshot from client
+    -- In-game snapshot
     local igYear   = clock.year   or 1898
     local igMonth  = clock.month  or 1
     local igDay    = clock.day    or 1
@@ -1023,7 +1248,25 @@ RegisterNetEvent('rsg-governor:server:duty:updateClock', function(clock, isOnDut
 
     if isOnDuty then
         ----------------------------------------------------------------
-        -- ON DUTY  →  INSERT a new row with Real+Game START only
+        -- SAFEGUARD:
+        -- If there is already an unfinished session for this citizenid,
+        -- DO NOT open a new one (ignore double /duty on).
+        ----------------------------------------------------------------
+        local open = MySQL.single.await(([[
+            SELECT id FROM %s
+            WHERE citizenid = ? AND ended_at IS NULL
+            ORDER BY id DESC
+            LIMIT 1
+        ]]):format(DUTY_TABLE), { citizen })
+
+        if open then
+            print(('[rsg-governor] Ignoring extra ON-duty toggle for %s (open session id=%d)'):format(citizen, open.id or 0))
+            notify(src, 'You already have a running duty session in the governor log. Not opening a new one.', 'error')
+            return
+        end
+
+        ----------------------------------------------------------------
+        -- No open session -> create a fresh one
         ----------------------------------------------------------------
         local sessionId = MySQL.insert.await(([[
             INSERT INTO %s
@@ -1051,7 +1294,7 @@ RegisterNetEvent('rsg-governor:server:duty:updateClock', function(clock, isOnDut
             jobType,
             grade,
             region,
-            realNow,      -- started_at (real date/time)
+            realNow,              -- started_at (real)
             igYear, igMonth, igDay,
             igHour, igMinute
         })
@@ -1061,115 +1304,31 @@ RegisterNetEvent('rsg-governor:server:duty:updateClock', function(clock, isOnDut
         end
     else
         ----------------------------------------------------------------
-        -- OFF DUTY → close latest open session using IN-GAME duration
+        -- OFF duty → close latest open session using IN-GAME duration
         ----------------------------------------------------------------
-        local rows = MySQL.query.await(([[
-            SELECT
-                id,
-                started_at,
-                ig_start_year,
-                ig_start_month,
-                ig_start_day,
-                ig_start_hour,
-                ig_start_minute
-            FROM %s
-            WHERE citizenid = ? AND ended_at IS NULL
-            ORDER BY id DESC
-            LIMIT 1
-        ]]):format(DUTY_TABLE), { citizen })
+        finalizeOpenDutySession(citizen, {
+            year   = igYear,
+            month  = igMonth,
+            day    = igDay,
+            hour   = igHour,
+            minute = igMinute,
+        }, realNow)
 
-        if not rows or not rows[1] then
-            -- No open session to close
-            return
-        end
-
-        local row   = rows[1]
-        local rowId = row.id
-
-        -- Real end timestamp as before
-        local realEnd = realNow
-
-        ------------------------------------------------------------
-        -- 1) Build IN-GAME start and end timestamps
-        ------------------------------------------------------------
-        local sYear   = tonumber(row.ig_start_year)   or igYear
-        local sMonth  = tonumber(row.ig_start_month)  or igMonth
-        local sDay    = tonumber(row.ig_start_day)    or igDay
-        local sHour   = tonumber(row.ig_start_hour)   or igHour
-        local sMinute = tonumber(row.ig_start_minute) or igMinute
-
-        local eYear   = igYear
-        local eMonth  = igMonth
-        local eDay    = igDay
-        local eHour   = igHour
-        local eMinute = igMinute
-
-        local startGameTs = os.time({
-            year  = sYear,
-            month = sMonth,
-            day   = sDay,
-            hour  = sHour,
-            min   = sMinute,
-            sec   = 0,
-        })
-
-        local endGameTs = os.time({
-            year  = eYear,
-            month = eMonth,
-            day   = eDay,
-            hour  = eHour,
-            min   = eMinute,
-            sec   = 0,
-        })
-
-        local elapsedGameSec = math.max(0, endGameTs - startGameTs)
-        local elapsedGameMin = math.floor(elapsedGameSec / 60)
-        if elapsedGameMin <= 0 then
-            elapsedGameMin = 1   -- don't drop ultra-short sessions
-        end
-
-        ------------------------------------------------------------
-        -- 2) Split into Regular / Overtime using IN-GAME minutes
-        ------------------------------------------------------------
-        local regMin, otMin = elapsedGameMin, 0
-        local overtimeCfg   = Config.Payroll and Config.Payroll.OvertimeMinutes
-        if overtimeCfg and overtimeCfg > 0 and elapsedGameMin > overtimeCfg then
-            regMin = overtimeCfg
-            otMin  = elapsedGameMin - overtimeCfg
-        end
-
-        ------------------------------------------------------------
-        -- 3) Save real end + in-game end + minutes to DB row
-        ------------------------------------------------------------
-        local endYear   = eYear
-        local endMonth  = eMonth
-        local endDay    = eDay
-        local endHour   = eHour
-        local endMinute = eMinute
-
-        MySQL.update.await(([[
-            UPDATE %s SET
-                ended_at         = ?,
-                minutes_regular  = ?,
-                minutes_overtime = ?,
-                ig_end_year      = ?,
-                ig_end_month     = ?,
-                ig_end_day       = ?,
-                ig_end_hour      = ?,
-                ig_end_minute    = ?
-            WHERE id = ?
-        ]]):format(DUTY_TABLE), {
-            realEnd,          -- real end datetime
-            regMin,           -- IN-GAME regular minutes
-            otMin,            -- IN-GAME overtime minutes
-            endYear,
-            endMonth,
-            endDay,
-            endHour,
-            endMinute,
-            rowId
-        })
+        dutyClock[src].isOnDuty = false
     end
+end)
+
+-- Auto-OFF when player disconnects (prevents "infinite" ongoing sessions)
+AddEventHandler('playerDropped', function(_reason)
+    local src  = source
+    local info = dutyClock[src]
+
+    if info and info.isOnDuty and info.citizenid and info.lastClock then
+        -- Use the LAST in-game clock snapshot sent from the client
+        finalizeOpenDutySession(info.citizenid, info.lastClock)
+    end
+
+    dutyClock[src] = nil
 end)
 
 -- /dutylog - open the player's own duty log UI
