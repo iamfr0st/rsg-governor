@@ -16,9 +16,35 @@ function getInGameClock()
     }
 end
 
+local dutyHeartbeatActive = false
+
+local function startDutyHeartbeat()
+    if dutyHeartbeatActive then return end
+    dutyHeartbeatActive = true
+
+    CreateThread(function()
+        while dutyHeartbeatActive do
+            Wait(60000) -- every 60 seconds (real time); adjust if you want finer updates
+
+            local clock = getInGameClock()
+            -- Keep the server's dutyClock[src].lastClock fresh while on duty
+            TriggerServerEvent('rsg-governor:server:duty:recordClock', clock, true)
+        end
+    end)
+end
+
+local function stopDutyHeartbeat()
+    dutyHeartbeatActive = false
+end
 
 -- Called by RSGCore when your duty state changes
 RegisterNetEvent('RSGCore:Client:SetDuty', function(isOnDuty)
     local clock = getInGameClock()
     TriggerServerEvent('rsg-governor:server:duty:updateClock', clock, isOnDuty)
+
+    if isOnDuty then
+        startDutyHeartbeat()
+    else
+        stopDutyHeartbeat()
+    end
 end)
