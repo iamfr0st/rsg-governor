@@ -31,8 +31,8 @@ Config.Offices = {
     -- Default office definitions; one set per region.
     -- Governors can assign heads and salaries, but not directly move money.
     Default = {
-        { key = 'sheriff',       label = 'Sheriff',       maxSalary = 100 },
-        { key = 'medic',       label = 'Medic',       maxSalary = 120 },
+        { key = 'lawman',        label = 'Lawman',       maxSalary = 100 },
+        { key = 'medic',         label = 'Medic',         maxSalary = 120 },
         { key = 'judge',         label = 'Judge',         maxSalary = 150 },
         { key = 'tax_collector', label = 'Tax Collector', maxSalary = 80  },
         { key = 'doctor',        label = 'Medical Chief', maxSalary = 90  },
@@ -55,6 +55,15 @@ Config.Offices.JobMap = Config.Offices.JobMap or {
     medic = function(region_alias)
         return string.format('%s_medic', region_alias)
     end,
+}
+
+-- Default bank per governor region
+Config.RegionBankDefaults = {
+    new_hanover    = 'valbank',  -- Valentine Bank
+    lemoyne        = 'rhobank',  -- Rhodes Bank
+    west_elizabeth = 'blkbank',  -- Blackwater Bank
+    new_austin     = 'armbank',  -- Armadillo Bank
+    ambarino       = 'bank',     -- falls back to generic 'bank' (Saint Denis)
 }
 
 -- Region-wide rules text
