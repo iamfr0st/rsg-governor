@@ -1,5 +1,3 @@
--- rsg-governor/server/sv_offices.lua
-
 local RSGCore = exports['rsg-core']:GetCoreObject()
 Gov          = Gov or {}
 
@@ -65,11 +63,14 @@ local function ensureOfficeRow(region_name, office_key, office_label)
     office_key   = tostring(office_key or ''):lower()
     office_label = office_label or office_key
 
+    -- IMPORTANT FIX:
+    -- Do NOT overwrite an existing office_label (e.g. "Lawman") every time.
+    -- Only fill it if it was NULL / missing.
     MySQL.insert.await([[
         INSERT INTO governor_offices (region_name, office_key, office_label, base_salary_cents, salary_share, supply_share)
         VALUES (?, ?, ?, 0, 0.0, 0.0)
         ON DUPLICATE KEY UPDATE
-            office_label = VALUES(office_label)
+            office_label = COALESCE(office_label, VALUES(office_label))
     ]], { region_name, office_key, office_label })
 end
 
@@ -240,9 +241,34 @@ RSGCore.Commands.Add('govoffice', 'Manage regional offices (governor only)', {
     ensureOfficeRow(region, office, office)
 
     if mode == 'sethead' then
-        -- (your existing residency-aware head logic here)
-        -- keep what we already wrote earlier for sethead
-        -- ...
+        ----------------------------------------------------------------
+        -- FIX: actually save office head to governor_office_heads
+        ----------------------------------------------------------------
+        local targetId = tonumber(args[4] or 0)
+        if not targetId then
+            Gov.Notify(src, 'You must provide a server ID for the new office head.', 'error')
+            return
+        end
+
+        if not GetPlayerName(targetId) then
+            Gov.Notify(src, ('No player found with id %s.'):format(targetId), 'error')
+            return
+        end
+
+        local Target = RSGCore.Functions.GetPlayer(targetId)
+        if not Target or not Target.PlayerData then
+            Gov.Notify(src, 'Unable to load target player data.', 'error')
+            return
+        end
+
+        local citizenid = Target.PlayerData.citizenid
+        local charinfo  = Target.PlayerData.charinfo or {}
+        local firstname = charinfo.firstname or 'Unknown'
+        local lastname  = charinfo.lastname or ''
+        local char_name = (firstname .. ' ' .. lastname):gsub('%s+$', '')
+
+        setOfficeHead(region, office, citizenid, char_name)
+        Gov.Notify(src, ('Set head of "%s" in %s to %s.'):format(office, region, char_name), 'success')
         return
 
     elseif mode == 'clearhead' then
