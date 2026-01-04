@@ -13,6 +13,8 @@
 --  - It tries to use rsg-economy / rsg-residency if available.
 --  - All fields are *best effort*; if something is missing, you still
 --    get a sane "Unknown Region" struct instead of nils everywhere.
+
+lib.locale()
 --======================================================================
 
 Region = Region or {}

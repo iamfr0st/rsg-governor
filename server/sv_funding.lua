@@ -2,6 +2,7 @@
 -- Handles office funds stored in rsg-economy treasury
 
 local RSGCore = exports['rsg-core']:GetCoreObject()
+lib.locale()
 
 local TREASURY_TABLE = 'economy_treasury'
 

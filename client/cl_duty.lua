@@ -1,3 +1,5 @@
+lib.locale()
+
 function getInGameClock()
     -- RedM clock wrappers.
     -- GetClockMonth() returns 0–11, so +1 to get 1–12 for normal months.

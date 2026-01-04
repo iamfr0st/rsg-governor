@@ -5,6 +5,7 @@
 
 local RSGCore = exports['rsg-core']:GetCoreObject()
 local TAX_RES  = 'rsg-economy'
+lib.locale()
 
 local DUTY_TABLE = 'governor_duty_sessions'
 

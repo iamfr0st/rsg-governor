@@ -4,6 +4,7 @@
 
 local RSGCore = exports['rsg-core']:GetCoreObject()
 Gov          = Gov or {}
+lib.locale()
 
 local GOVERNOR_TABLE = 'governors'
 
