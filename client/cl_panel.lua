@@ -3,6 +3,8 @@
 -- Governor Panel (ox_lib context menu)
 --======================================================================
 
+lib.locale()
+
 local isOpening = false
 
 local function openEconomyMenu()
@@ -30,20 +32,20 @@ local function openRulesMenu(regionName)
 
     local options = {
         {
-            title       = 'View Rules',
-            description = rulesText ~= '' and rulesText or 'No rules set for this region.',
+            title       = locale('view_rules'),
+            description = rulesText ~= '' and rulesText or locale('no_rules_set'),
             readOnly    = true
         },
         {
-            title       = 'Set / Edit Rules',
-            description = 'Update region rules text',
+            title       = locale('set_edit_rules'),
+            description = locale('update_rules_text'),
             arrow       = true,
             event       = 'rsg-governor:client:setRules',
             args        = { regionName = regionName or 'here', current = rulesText }
         },
         {
-            title       = 'Make Announcement',
-            description = 'Broadcast a message to this region',
+            title       = locale('make_announcement'),
+            description = locale('broadcast_message'),
             arrow       = true,
             event       = 'rsg-governor:client:announce',
             args        = { regionName = regionName or 'here' }
@@ -52,7 +54,7 @@ local function openRulesMenu(regionName)
 
     lib.registerContext({
         id = 'rsg_governor_rules_menu',
-        title = ('Region Rules – %s'):format(regionName or 'here'),
+        title = locale('region_rules', regionName or 'here'),
         options = options
     })
     lib.showContext('rsg_governor_rules_menu')
@@ -62,11 +64,11 @@ RegisterNetEvent('rsg-governor:client:setRules', function(data)
     local regionName = data.regionName or 'here'
     local current    = data.current or ''
 
-    local txt = lib.inputDialog('Set Region Rules', {
+    local txt = lib.inputDialog(locale('set_region_rules'), {
         {
             type        = 'textarea',
-            label       = 'Rules Text',
-            description = 'Write the rules for this region.',
+            label       = locale('rules_text'),
+            description = locale('write_rules_desc'),
             default     = current,
             min         = 0,
             max         = Config.Rules and Config.Rules.MaxLength or 4000,
@@ -84,7 +86,7 @@ end)
 RegisterNetEvent('rsg-governor:client:announce', function(data)
     local regionName = data.regionName or 'here'
 
-    local msg = askInput('Region Announcement', 'Message', 'Enter announcement...')
+    local msg = askInput(locale('region_announcement'), locale('message'), locale('enter_announcement'))
     if not msg then return end
 
     ExecuteCommand(('govannounce here %s'):format(msg))
@@ -94,8 +96,8 @@ function openOfficesMenu(regionName)
     local offices = lib.callback.await('rsg-governor:getRegionOffices', false, regionName or 'here') or {}
     if #offices == 0 then
         lib.notify({
-            title       = 'Governor',
-            description = 'No offices defined for this region yet.',
+            title       = locale('governor'),
+            description = locale('no_offices_defined'),
             type        = 'inform'
         })
         return
@@ -112,8 +114,7 @@ function openOfficesMenu(regionName)
 
         options[#options+1] = {
             title = label,
-            description = ('Head: %s\nSalary: $%.2f\nSalary share: %.2f\nSupply share: %.2f')
-                :format(headName, salary, salaryShare, supplyShare),
+            description = locale('head_salary_desc', headName, salary, salaryShare, supplyShare),
             arrow = true,
             event = 'rsg-governor:client:officeDetail',
             args  = {
@@ -130,7 +131,7 @@ function openOfficesMenu(regionName)
 
     lib.registerContext({
         id      = 'rsg_governor_offices',
-        title   = 'Offices & Salaries',
+        title   = locale('offices_salaries'),
         options = options
     })
 
@@ -144,36 +145,36 @@ RegisterNetEvent('rsg-governor:client:officeDetail', function(data)
 
     local options = {
         {
-            title       = 'Edit Head / Salary / Shares',
-            description = 'Open a form to edit all values at once.',
+            title       = locale('edit_head_salary_shares'),
+            description = locale('edit_all_values_desc'),
             arrow       = true,
             event       = 'rsg-governor:client:officeEditForm',
             args        = data
         },
         {
-            title       = 'Set Head (quick)',
-            description = ('Current: %s'):format(data.head_name or 'Unassigned'),
+            title       = locale('set_head_quick'),
+            description = locale('current_head', data.head_name or locale('unassigned')),
             arrow       = true,
             event       = 'rsg-governor:client:setHead',
             args        = data
         },
         {
-            title       = 'Set Salary (quick)',
-            description = ('Current: $%.2f'):format(data.salary or 0),
+            title       = locale('set_salary_quick'),
+            description = locale('current_salary', data.salary or 0),
             arrow       = true,
             event       = 'rsg-governor:client:setSalary',
             args        = data
         },
         {
-            title       = 'Set Salary Share (quick)',
-            description = ('Current: %.2f (0.0 - 1.0)'):format(data.salary_share or 0),
+            title       = locale('set_salary_share_quick'),
+            description = locale('current_salary_share', data.salary_share or 0),
             arrow       = true,
             event       = 'rsg-governor:client:setSalaryShare',
             args        = data
         },
         {
-            title       = 'Set Supply Share (quick)',
-            description = ('Current: %.2f (0.0 - 1.0)'):format(data.supply_share or 0),
+            title       = locale('set_supply_share_quick'),
+            description = locale('current_supply_share', data.supply_share or 0),
             arrow       = true,
             event       = 'rsg-governor:client:setSupplyShare',
             args        = data
@@ -183,7 +184,7 @@ RegisterNetEvent('rsg-governor:client:officeDetail', function(data)
 
     lib.registerContext({
         id = 'rsg_governor_office_detail',
-        title = ('Office – %s'):format(office_label),
+        title = locale('office_detail', office_label),
         options = options
     })
     lib.showContext('rsg_governor_office_detail')
@@ -200,12 +201,12 @@ RegisterNetEvent('rsg-governor:client:officeEditForm', function(data)
     local currentSalaryShare = tonumber(data.salary_share or data.funding or 0) or 0
     local currentSupplyShare = tonumber(data.supply_share or 0) or 0
 
-    local dlg = lib.inputDialog(('Edit Office – %s'):format(office_label), {
+    local dlg = lib.inputDialog(locale('edit_office', office_label), {
         {
             type        = 'input',
-            label       = 'Head of Office (Server ID)',
-            description = ('Current head: %s (leave blank to keep)'):format(
-                currentHead ~= '' and currentHead or 'Unassigned'
+            label       = locale('head_of_office_id'),
+            description = locale('current_head_desc',
+                currentHead ~= '' and currentHead or locale('unassigned')
             ),
             default     = '',
             required    = false,
@@ -213,22 +214,22 @@ RegisterNetEvent('rsg-governor:client:officeEditForm', function(data)
         {
             -- use input (string) instead of number to avoid ox_lib default/nil quirks
             type        = 'input',
-            label       = 'Base salary (dollars)',
-            description = ('Current: $%.2f (leave blank to keep)'):format(currentSalary),
+            label       = locale('base_salary_dollars'),
+            description = locale('current_salary_desc', currentSalary),
             default     = (currentSalary > 0) and tostring(math.floor(currentSalary)) or '',
             required    = false,
         },
         {
             type        = 'input',
-            label       = 'Salary share (0.0 – 1.0)',
-            description = ('Current: %.2f (leave blank to keep)'):format(currentSalaryShare),
+            label       = locale('salary_share_label'),
+            description = locale('salary_share_desc', currentSalaryShare),
             default     = string.format('%.2f', currentSalaryShare),
             required    = false,
         },
         {
             type        = 'input',
-            label       = 'Supply share (0.0 – 1.0)',
-            description = ('Current: %.2f (leave blank to keep)'):format(currentSupplyShare),
+            label       = locale('supply_share_label'),
+            description = locale('supply_share_desc', currentSupplyShare),
             default     = string.format('%.2f', currentSupplyShare),
             required    = false,
         },
@@ -251,8 +252,8 @@ RegisterNetEvent('rsg-governor:client:officeEditForm', function(data)
             ExecuteCommand(cmd)
         else
             lib.notify({
-                title       = 'Governor',
-                description = 'Invalid server ID for head of office.',
+                title       = locale('governor'),
+                description = locale('invalid_server_id'),
                 type        = 'error',
                 duration    = 4000,
             })
@@ -266,8 +267,8 @@ RegisterNetEvent('rsg-governor:client:officeEditForm', function(data)
         local num = tonumber(salaryStr)
         if not num then
             lib.notify({
-                title       = 'Governor',
-                description = 'Invalid salary value. Must be a number.',
+                title       = locale('governor'),
+                description = locale('invalid_salary_value'),
                 type        = 'error',
                 duration    = 4000,
             })
@@ -287,8 +288,8 @@ RegisterNetEvent('rsg-governor:client:officeEditForm', function(data)
         local num = tonumber(salaryShareStr)
         if not num then
             lib.notify({
-                title       = 'Governor',
-                description = 'Invalid salary share. Must be a number between 0.0 and 1.0.',
+                title       = locale('governor'),
+                description = locale('invalid_salary_share'),
                 type        = 'error',
                 duration    = 4000,
             })
@@ -311,8 +312,8 @@ RegisterNetEvent('rsg-governor:client:officeEditForm', function(data)
         local num = tonumber(supplyShareStr)
         if not num then
             lib.notify({
-                title       = 'Governor',
-                description = 'Invalid supply share. Must be a number between 0.0 and 1.0.',
+                title       = locale('governor'),
+                description = locale('invalid_supply_share'),
                 type        = 'error',
                 duration    = 4000,
             })
@@ -329,15 +330,15 @@ RegisterNetEvent('rsg-governor:client:officeEditForm', function(data)
     end
 
     lib.notify({
-        title       = 'Governor',
-        description = ('Office "%s" update requested.'):format(office_label),
+        title       = locale('governor'),
+        description = locale('office_update_requested', office_label),
         type        = 'success',
         duration    = 4000,
     })
 end)
 
 RegisterNetEvent('rsg-governor:client:setHead', function(data)
-    local idStr = askInput('Set Head of Office', 'Player Server ID', 'Enter server ID of the player...')
+    local idStr = askInput(locale('set_head_of_office'), locale('player_server_id'), locale('enter_server_id'))
     if not idStr then return end
     local id = tonumber(idStr or 0) or 0
     if id <= 0 then return end
@@ -348,7 +349,7 @@ end)
 
 RegisterNetEvent('rsg-governor:client:setSalary', function(data)
     local current = tonumber(data.salary or 0) or 0
-    local input = askInput('Set Salary', 'Salary (dollars)', ('Current: %.2f'):format(current), tostring(math.floor(current)))
+    local input = askInput(locale('set_salary'), locale('salary_dollars'), locale('current_salary', current), tostring(math.floor(current)))
     if not input then return end
     local salary = tonumber(input or 0) or 0
     if salary < 0 then salary = 0 end
@@ -359,7 +360,7 @@ end)
 
 RegisterNetEvent('rsg-governor:client:setSalaryShare', function(data)
     local current = tonumber(data.salary_share or 0) or 0
-    local input = askInput('Set Salary Share', 'Share (0.0 - 1.0)', ('Current: %.2f'):format(current), tostring(current))
+    local input = askInput(locale('set_salary_share'), locale('share_label'), locale('current_salary_share', current), tostring(current))
     if not input then return end
     local share = tonumber(input or 0) or 0
     if share < 0 then share = 0 end
@@ -371,7 +372,7 @@ end)
 
 RegisterNetEvent('rsg-governor:client:setSupplyShare', function(data)
     local current = tonumber(data.supply_share or 0) or 0
-    local input = askInput('Set Supply Share', 'Share (0.0 - 1.0)', ('Current: %.2f'):format(current), tostring(current))
+    local input = askInput(locale('set_supply_share'), locale('share_label'), locale('current_supply_share', current), tostring(current))
     if not input then return end
     local share = tonumber(input or 0) or 0
     if share < 0 then share = 0 end
@@ -392,7 +393,7 @@ local function openPayrollEmployeesMenu(regionName, officeKey)
     }) or {}
 
     if #employees == 0 then
-        lib.notify({ title = 'Governor', description = 'No unpaid duty sessions found for this filter.', type = 'inform' })
+        lib.notify({ title = locale('governor'), description = locale('no_unpaid_duty_sessions'), type = 'inform' })
         return
     end
 
@@ -408,17 +409,14 @@ local function openPayrollEmployeesMenu(regionName, officeKey)
 
         opts[#opts+1] = {
             title = string.format('%s (%s %d)', e.name or e.citizenid, jobLabel, grade),
-            description = string.format(
-                'Regular: %.1f h, OT: %.1f h\nTotal hours: %.1f\nEstimated pay: $%.2f',
-                regHours, otHours, totalHours, pay
-            ),
+            description = locale('employee_duty_desc', regHours, otHours, totalHours, pay),
             disabled = true
         }
     end
 
     lib.registerContext({
         id      = 'rsg_governor_payroll_employees',
-        title   = ('Payroll – Employees (%s)'):format(regionName or 'here'),
+        title   = locale('payroll_employees', regionName or 'here'),
         menu    = 'rsg_governor_payroll_menu',
         options = opts
     })
@@ -429,8 +427,8 @@ local function openPayrollMenu(regionName)
     local summary = lib.callback.await('rsg-governor:getPayrollSummary', false, regionName or 'here')
     if not summary then
         lib.notify({
-            title       = 'Governor',
-            description = 'Unable to fetch payroll summary or you are not allowed.',
+            title       = locale('governor'),
+            description = locale('unable_fetch_payroll'),
             type        = 'error'
         })
         return
@@ -448,9 +446,8 @@ local function openPayrollMenu(regionName)
 
     -- Summary: treasury, total budgets, remaining, and estimated payroll
     options[#options+1] = {
-        title       = 'Summary',
-        description = string.format(
-            'Treasury: $%d\nTotal office budgets: $%d\nRemaining Treasury (after budgets): $%d\nEstimated total payroll: $%d',
+        title       = locale('summary'),
+        description = locale('treasury_summary_desc',
             math.floor(treasury),
             math.floor(totalBudget),
             math.floor(remaining),
@@ -475,10 +472,7 @@ local function openPayrollMenu(regionName)
 
         options[#options+1] = {
             title = string.format('%s – $%.2f', label, estCost),
-            description = string.format(
-                'Regular: %.1f h, OT: %.1f h\n' ..
-                'Salary Share: %.2f (Budget: $%.2f)\n' ..
-                'Supply Share: %.2f (Budget: $%.2f)',
+            description = locale('office_breakdown_desc',
                 regHours, otHours,
                 salaryShare, salaryBudg,
                 supplyShare, supplyBudg
@@ -491,8 +485,8 @@ local function openPayrollMenu(regionName)
     end
 
     options[#options+1] = {
-        title       = 'View All Employees',
-        description = 'Show all unpaid sessions for this region.',
+        title       = locale('view_all_employees'),
+        description = locale('view_all_employees_desc'),
         arrow       = true,
         onSelect    = function()
             openPayrollEmployeesMenu(regionName, nil)
@@ -500,26 +494,23 @@ local function openPayrollMenu(regionName)
     }
 
     options[#options+1] = {
-        title       = 'Run Payroll Now',
-        description = 'Pay all online employees with unpaid duty sessions (bank).',
+        title       = locale('run_payroll_now'),
+        description = locale('run_payroll_now_desc'),
         arrow       = true,
         onSelect    = function()
             local res = lib.callback.await('rsg-governor:runPayroll', false, regionName or 'here')
             if not res or not res.ok then
                 lib.notify({
-                    title       = 'Governor',
-                    description = res and res.error or 'Payroll failed.',
+                    title       = locale('governor'),
+                    description = res and res.error or locale('payroll_failed'),
                     type        = 'error'
                 })
                 return
             end
 
             lib.notify({
-                title       = 'Governor',
-                description = string.format(
-                    'Payroll complete: paid $%d to %d employees.\nNew treasury: $%d.',
-                    res.totalPaid or 0, res.paidEmployees or 0, res.newTreasury or 0
-                ),
+                title       = locale('governor'),
+                description = locale('payroll_complete', res.totalPaid or 0, res.paidEmployees or 0, res.newTreasury or 0),
                 type        = 'success'
             })
 
@@ -530,7 +521,7 @@ local function openPayrollMenu(regionName)
 
     lib.registerContext({
         id      = 'rsg_governor_payroll_menu',
-        title   = ('Payroll & Attendance – %s'):format(regionName or 'here'),
+        title   = locale('payroll_attendance_region', regionName or 'here'),
         menu    = 'rsg_governor_main_panel',
         options = options
     })
@@ -548,7 +539,7 @@ local function openGovernorPanel()
     -- Ask server which region (if any) this player is governor of
     local region = lib.callback.await('rsg-governor:getMyGovernorRegion', false)
     if not region or region == '' then
-        lib.notify({ title = 'Governor', description = 'You are not a governor of any region.', type = 'error' })
+        lib.notify({ title = locale('governor'), description = locale('not_governor'), type = 'error' })
         isOpening = false
         return
     end
@@ -557,36 +548,36 @@ local function openGovernorPanel()
 
         local options = {
         {
-            title       = 'Economy / Taxes',
-            description = 'Open economy panel (taxes, VAT, revenue) for your region.',
+            title       = locale('economy_taxes'),
+            description = locale('economy_taxes_desc'),
             onSelect    = function()
                 openEconomyMenu()
             end
         },
         {
-            title       = 'Offices & Salaries',
-            description = 'Manage heads of office, salaries, and funding shares.',
+            title       = locale('offices_salaries'),
+            description = locale('offices_salaries_desc'),
             onSelect    = function()
                 openOfficesMenu(regionNorm)
             end
         },
         {
-            title       = 'Payroll & Attendance',
-            description = 'Review duty, estimate costs, and run payroll.',
+            title       = locale('payroll_attendance'),
+            description = locale('payroll_attendance_desc'),
             onSelect    = function()
                 openPayrollMenu(regionNorm)
             end
         },
         {
-            title       = 'Rules & Announcements',
-            description = 'Set regional rules and send announcements.',
+            title       = locale('rules_announcements'),
+            description = locale('rules_announcements_desc'),
             onSelect    = function()
                 openRulesMenu(regionNorm)
             end
         },
         {
-            title       = 'Business Permits',
-            description = 'Review and approve business permits.',
+            title       = locale('business_permits'),
+            description = locale('business_permits_desc'),
             onSelect    = function()
                 ExecuteCommand('govpermits here')
             end
@@ -595,7 +586,7 @@ local function openGovernorPanel()
 
     lib.registerContext({
         id = 'rsg_governor_main_panel',
-        title = ('Governor Panel – %s'):format(regionNorm),
+        title = locale('governor_panel_region', regionNorm),
         options = options
     })
     lib.showContext('rsg_governor_main_panel')

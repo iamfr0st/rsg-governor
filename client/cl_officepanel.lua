@@ -1,4 +1,5 @@
 local RSGCore = exports['rsg-core']:GetCoreObject()
+lib.locale()
 -- ==========================================================
 -- Office panel open helper (used by NUI + other events)
 -- ==========================================================

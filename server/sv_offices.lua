@@ -1,5 +1,6 @@
 local RSGCore = exports['rsg-core']:GetCoreObject()
 Gov          = Gov or {}
+lib.locale()
 
 local function cents(d)
     d = tonumber(d or 0) or 0

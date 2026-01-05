@@ -8,6 +8,7 @@ Config        = Config or {}
 Config.RegionGovernorJobs = Config.RegionGovernorJobs or {
     -- default is just 'governor' for all regions
 }
+lib.locale()
 
 local function debugPrint(...)
     print('[rsg-governor]', ...)

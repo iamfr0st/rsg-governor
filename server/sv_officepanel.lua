@@ -4,6 +4,7 @@
 --======================================================================
 
 local RSGCore = exports['rsg-core']:GetCoreObject()
+lib.locale()
 
 -- DB tables
 local OFFICE_ALLOC_TABLE    = 'governor_offices'

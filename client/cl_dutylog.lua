@@ -1,4 +1,5 @@
 local RSGCore = exports['rsg-core']:GetCoreObject()
+lib.locale()
 
 -- Called from server command /dutylog
 RegisterNetEvent('rsg-governor:client:openDutyLog', function()

@@ -5,6 +5,7 @@
 
 local RSGCore = exports['rsg-core']:GetCoreObject()
 Gov          = Gov or {}
+lib.locale()
 
 local function now()
     return os.time()

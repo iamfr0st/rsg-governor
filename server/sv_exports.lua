@@ -2,6 +2,7 @@
 -- All server exports & shared callbacks for rsg-governor v2
 
 Gov = Gov or {}
+lib.locale()
 
 -----------------------------------------------------------------
 -- SAFE WRAPPER HELPERS

@@ -37,6 +37,8 @@ server_scripts {
     'server/sv_exports.lua',
     'server/sv_region.lua',
     'server/sv_officepanel.lua',
-    
-    
+}
+
+files {
+    'locales/*.json'
 }
